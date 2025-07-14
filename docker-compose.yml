@@ -1,0 +1,9 @@
+services:
+  fastapi:
+    build:
+      context: .
+      dockerfile: ./compose/local/fastapi/Dockerfile
+    ports:
+      - 8000:8000
+    volumes:
+      - ./src/:/code/
