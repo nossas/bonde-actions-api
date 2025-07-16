@@ -3,6 +3,9 @@ services:
     build:
       context: .
       dockerfile: ./compose/local/fastapi/Dockerfile
+    environment:
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
     ports:
       - 8000:8000
     volumes:
