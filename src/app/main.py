@@ -4,7 +4,9 @@ from typing import Annotated
 from fastapi import Depends, FastAPI
 from twilio.rest import Client
 
-from .settings import Settings
+from app.models.phone_pressure import PhoneCall
+from app.services.twilio import twilio_call
+from app.settings import Settings
 
 app = FastAPI()
 
@@ -12,12 +14,13 @@ app = FastAPI()
 def get_settings():
     return Settings()
 
-def get_twilio_client(settings: Settings):
-    return Client(settings.twilio_account_sid, settings.twilio_auth_token)
-
-@app.get("/")
-def read_root(
+@app.post("/phone_pressure/call")
+def make_phone_call(
+    phone_call: PhoneCall,
     settings: Annotated[Settings, Depends(get_settings)],
 ):
-    client = get_twilio_client(settings)
-    return client.accounts.credentials.public_key.list()
+    return twilio_call(
+        phone_call.activist_number,
+        phone_call.target_number,
+        settings,
+    )
