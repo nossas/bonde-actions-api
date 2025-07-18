@@ -22,7 +22,7 @@ def make_phone_call(
     settings: Annotated[Settings, Depends(get_settings)],
 ):
     return twilio_call(
-        phone_call=phone_call,
+        input=phone_call,
         settings=settings,
         server_url=get_server_url(request),
     )

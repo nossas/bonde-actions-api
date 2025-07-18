@@ -9,16 +9,18 @@ from app.utils import get_logger
 def get_twilio_client(settings: Settings):
     return Client(settings.twilio_account_sid, settings.twilio_auth_token)
 
-def twilio_call(phone_call: PhoneCall, settings: Settings, server_url: str):
+def twilio_call(input: PhoneCall, settings: Settings, server_url: str):
+    activist_number = f"+55 {input.activist_number}"
+
     client = get_twilio_client(settings)
 
     response = VoiceResponse()
-    dial = Dial(phone_call.target_number)
+    dial = Dial(input.target_number, callerId=activist_number)
     response.append(dial)
 
     call = client.calls.create(
         from_=settings.twilio_phone_number,
-        to=phone_call.activist_number,
+        to=activist_number,
         status_callback=f"{server_url}/phone/status_callback",
         status_callback_method="POST",
         status_callback_event=["initiated", "ringing", "answered", "completed"],
