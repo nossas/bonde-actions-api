@@ -24,3 +24,4 @@ class PhonePressureAction(BaseModel):
 class PhoneCall(BaseModel):
     activist_number: str
     target_number: str
+    widget_id: int
