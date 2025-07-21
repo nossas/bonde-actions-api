@@ -2,7 +2,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-class TwilioCallEvent(BaseModel):
+class TwilioVoiceEvent(BaseModel):
     CallSid: str
     CallStatus: str
     From: str
