@@ -1,10 +1,10 @@
 from functools import cache
 from typing import Optional
 
-from sqlmodel import Field, Session, SQLModel, create_engine
+from sqlmodel import Field, Session, SQLModel, create_engine, desc, select
 from twilio.rest.api.v2010.account.call import CallInstance
 
-from app.models.phone_pressure import PhoneCall
+from app.models.phone_pressure import PhoneCall, PhoneCallResponse
 from app.models.twilio_callback import TwilioVoiceEvent
 
 class TwilioCall(SQLModel, table=True):
@@ -17,7 +17,7 @@ class TwilioCall(SQLModel, table=True):
 class TwilioCallEvent(SQLModel, table=True):
     __tablename__: str = "twilio_call_event"
     id: Optional[int] = Field(default=None, primary_key=True)
-    call_sid: str = Field(foreign_key="twilio_call.call_sid")
+    call_sid: str = Field(foreign_key="twilio_call.call_sid", index=True)
     call_status: str
 
 def create_database_and_tables():
@@ -63,3 +63,15 @@ def save_call_event(event: TwilioVoiceEvent):
     with get_session() as session:
         session.add(db_event)
         session.commit()
+
+def select_latest_call_event(call_sid: str):
+    with get_session() as session:
+        statement = select(TwilioCallEvent) \
+            .where(TwilioCallEvent.call_sid == call_sid) \
+            .order_by(desc(TwilioCallEvent.id))
+        event = session.exec(statement).first()
+
+    if event is None:
+        return None
+    else:
+        return PhoneCallResponse(call=event.call_sid, status=event.call_status)

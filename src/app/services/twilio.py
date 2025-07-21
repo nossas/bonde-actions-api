@@ -2,15 +2,14 @@ from twilio.rest import Client
 from twilio.twiml.voice_response import Dial, VoiceResponse
 
 from app.database import save_call, save_call_event
-from app.models.phone_pressure import PhoneCall
+from app.models.phone_pressure import PhoneCall, PhoneCallResponse
 from app.models.twilio_callback import TwilioVoiceEvent
 from app.settings import Settings, get_settings
-from app.utils import get_logger
 
-def get_twilio_client(settings: Settings):
+def get_twilio_client(settings: Settings) -> Client:
     return Client(settings.twilio_account_sid, settings.twilio_auth_token)
 
-def twilio_call(input: PhoneCall):
+def twilio_call(input: PhoneCall) -> PhoneCallResponse:
     activist_number = f"+55 {input.activist_number}"
 
     settings = get_settings()
@@ -31,18 +30,9 @@ def twilio_call(input: PhoneCall):
 
     save_call(input, call)
 
-    return {
-        "call": call.sid,
-        "status": call.status,
-    }
+    return PhoneCallResponse(call=call.sid, status=call.status)
 
-def twilio_voice_callback(event: TwilioVoiceEvent):
-    logger = get_logger()
-    logger.info(f"Voice Event: Sid = {event.CallSid}, Status = {event.CallStatus}")
-
+def twilio_voice_callback(event: TwilioVoiceEvent) -> PhoneCallResponse:
     save_call_event(event)
 
-    return {
-        "call": event.CallSid,
-        "status": event.CallStatus,
-    }
+    return PhoneCallResponse(call=event.CallSid, status=event.CallStatus)

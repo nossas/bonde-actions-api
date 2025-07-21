@@ -25,3 +25,7 @@ class PhoneCall(BaseModel):
     activist_number: str
     target_number: str
     widget_id: int
+
+class PhoneCallResponse(BaseModel):
+    call: str
+    status: str
