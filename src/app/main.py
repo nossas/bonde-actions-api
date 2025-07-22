@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import FastAPI, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import create_database_and_tables, select_latest_call_event
 from app.models.phone_pressure import PhoneCall, PhoneCallResponse, PhonePressureAction
@@ -15,6 +16,13 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_headers=["*"],
+    allow_methods=["*"],
+    allow_origins=["*"],
+)
 
 @app.post("/phone/call")
 def make_phone_call(phone_call: PhoneCall) -> PhoneCallResponse:
