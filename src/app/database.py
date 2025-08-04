@@ -6,6 +6,7 @@ from twilio.rest.api.v2010.account.call import CallInstance
 
 from app.models.phone_pressure import PhoneCallResponse, PhonePressureAction
 from app.models.twilio_callback import TwilioVoiceEvent
+from app.settings import get_settings
 
 class TwilioCall(SQLModel, table=True):
     __tablename__: str = "twilio_call"
@@ -26,11 +27,11 @@ def create_database_and_tables():
 
 @cache
 def get_engine():
-    sqlite_url = "sqlite:////code/db.sqlite3"
-    connect_args = {
-        "check_same_thread": False,
-    }
-    engine = create_engine(sqlite_url, connect_args=connect_args)
+    settings = get_settings()
+    engine = create_engine(
+        settings.database_url,
+        pool_reset_on_return=None,
+    )
     return engine
 
 def get_session():
