@@ -13,8 +13,8 @@ class PhoneTarget(BaseModel):
 
 class PhonePressureCustomFields(BaseModel):
     target: PhoneTarget
-    call: Optional[str]
-    status: Optional[str]
+    call: Optional[str] = ''
+    status: Optional[str] = 'queued'
 
 class PhonePressureInput(BaseModel):
     custom_fields: PhonePressureCustomFields

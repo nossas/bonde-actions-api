@@ -12,7 +12,7 @@ def get_twilio_client(settings: Settings) -> Client:
 
 def twilio_call(action: PhonePressureAction) -> PhoneCallResponse:
     activist_number = f"+55 {action.activist.phone}"
-    target_number = action.input.custom_fields.target
+    target_number = action.input.custom_fields.target.phone
 
     settings = get_settings()
     client = get_twilio_client(settings)
@@ -30,11 +30,11 @@ def twilio_call(action: PhonePressureAction) -> PhoneCallResponse:
         twiml=response,
     )
 
-    save_call(action, call)
-
     action.input.custom_fields.call = call.sid
     action.input.custom_fields.status = call.status
     create_widget_action(action)
+
+    save_call(action, call)
 
     return PhoneCallResponse(call=call.sid, status=call.status)
 

@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from functools import cache
 from typing import Optional
 
@@ -8,18 +9,23 @@ from app.models.phone_pressure import PhoneCallResponse, PhonePressureAction
 from app.models.twilio_callback import TwilioVoiceEvent
 from app.settings import get_settings
 
+def create_timestamp():
+    return datetime.now(timezone.utc)
+
 class TwilioCall(SQLModel, table=True):
     __tablename__: str = "twilio_call"
     call_sid: str = Field(primary_key=True)
     widget_id: int
     activist_number: str
     target_number: str
+    timestamp: datetime = Field(default_factory=create_timestamp)
 
 class TwilioCallEvent(SQLModel, table=True):
     __tablename__: str = "twilio_call_event"
     id: Optional[int] = Field(default=None, primary_key=True)
     call_sid: str = Field(foreign_key="twilio_call.call_sid", index=True)
     call_status: str
+    timestamp: datetime = Field(default_factory=create_timestamp)
 
 def create_database_and_tables():
     engine = get_engine()
