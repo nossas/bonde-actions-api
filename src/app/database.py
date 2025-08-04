@@ -4,7 +4,7 @@ from typing import Optional
 from sqlmodel import Field, Session, SQLModel, create_engine, desc, select
 from twilio.rest.api.v2010.account.call import CallInstance
 
-from app.models.phone_pressure import PhoneCall, PhoneCallResponse
+from app.models.phone_pressure import PhoneCallResponse, PhonePressureAction
 from app.models.twilio_callback import TwilioVoiceEvent
 
 class TwilioCall(SQLModel, table=True):
@@ -37,12 +37,12 @@ def get_session():
     engine = get_engine()
     return Session(engine)
 
-def save_call(input: PhoneCall, call: CallInstance):
+def save_call(action: PhonePressureAction, call: CallInstance):
     db_call = TwilioCall(
         call_sid=call.sid,
-        activist_number=input.activist_number,
-        target_number=input.target_number,
-        widget_id=input.widget_id,
+        activist_number=action.activist.phone,
+        target_number=action.input.custom_fields.target,
+        widget_id=action.widget_id,
     )
     db_event = TwilioCallEvent(
         call_sid=call.sid,

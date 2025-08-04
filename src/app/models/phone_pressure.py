@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 class PhonePressureActivist(BaseModel):
@@ -10,8 +12,9 @@ class PhoneTarget(BaseModel):
     phone: str
 
 class PhonePressureCustomFields(BaseModel):
-    status: str
     target: PhoneTarget
+    call: Optional[str]
+    status: Optional[str]
 
 class PhonePressureInput(BaseModel):
     custom_fields: PhonePressureCustomFields
@@ -20,11 +23,6 @@ class PhonePressureAction(BaseModel):
     widget_id: int
     activist: PhonePressureActivist
     input: PhonePressureInput
-
-class PhoneCall(BaseModel):
-    activist_number: str
-    target_number: str
-    widget_id: int
 
 class PhoneCallResponse(BaseModel):
     call: str

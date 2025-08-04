@@ -5,7 +5,7 @@ from fastapi import FastAPI, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import create_database_and_tables, select_latest_call_event
-from app.models.phone_pressure import PhoneCall, PhoneCallResponse, PhonePressureAction
+from app.models.phone_pressure import PhoneCallResponse, PhonePressureAction
 from app.models.twilio_callback import TwilioVoiceEvent
 from app.services.bonde_graphql import create_widget_action
 from app.services.twilio import twilio_call, twilio_voice_callback
@@ -25,7 +25,7 @@ app.add_middleware(
 )
 
 @app.post("/phone/call")
-def make_phone_call(phone_call: PhoneCall) -> PhoneCallResponse:
+def make_phone_call(phone_call: PhonePressureAction) -> PhoneCallResponse:
     return twilio_call(phone_call)
 
 @app.get("/phone/status")
