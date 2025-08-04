@@ -16,6 +16,7 @@ class TwilioCall(SQLModel, table=True):
     __tablename__: str = "twilio_call"
     call_sid: str = Field(primary_key=True)
     widget_id: int
+    action_id: Optional[int] = None
     activist_number: str
     target_number: str
     timestamp: datetime = Field(default_factory=create_timestamp)
