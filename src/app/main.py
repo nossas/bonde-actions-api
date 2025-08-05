@@ -7,7 +7,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import create_database_and_tables, select_latest_call_event
 from app.models.phone_pressure import PhoneCallResponse, PhonePressureAction
 from app.models.twilio_callback import TwilioVoiceEvent
-from app.services.bonde_graphql import create_widget_action
 from app.services.twilio import twilio_call, twilio_voice_callback
 
 @asynccontextmanager
@@ -38,7 +37,3 @@ def get_current_call_status(call: str) -> PhoneCallResponse:
 @app.post("/phone/status_callback")
 def receive_phone_callback(event: Annotated[TwilioVoiceEvent, Form()]) -> PhoneCallResponse:
     return twilio_voice_callback(event)
-
-@app.post("/phone/widget_action")
-async def save_widget_action(action: PhonePressureAction):
-    return create_widget_action(action)

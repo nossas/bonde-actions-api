@@ -11,7 +11,7 @@ def get_graphql_client():
     client = Client(transport=transport, fetch_schema_from_transport=True)
     return client
 
-async def create_widget_action(action: PhonePressureAction):
+def create_widget_action(action: PhonePressureAction):
     client = get_graphql_client()
 
     mutation = gql("""
@@ -28,4 +28,4 @@ async def create_widget_action(action: PhonePressureAction):
         "widget_id": action.widget_id,
     }
 
-    return await client.execute_async(mutation, variable_values=variables)
+    return client.execute(mutation, variable_values=variables)

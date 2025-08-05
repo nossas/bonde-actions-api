@@ -32,9 +32,9 @@ def twilio_call(action: PhonePressureAction) -> PhoneCallResponse:
 
     action.input.custom_fields.call = call.sid
     action.input.custom_fields.status = call.status
-    create_widget_action(action)
-
     save_call(action, call)
+
+    create_widget_action(action)
 
     return PhoneCallResponse(call=call.sid, status=call.status)
 

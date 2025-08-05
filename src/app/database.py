@@ -49,7 +49,7 @@ def save_call(action: PhonePressureAction, call: CallInstance):
     db_call = TwilioCall(
         call_sid=call.sid,
         activist_number=action.activist.phone,
-        target_number=action.input.custom_fields.target,
+        target_number=action.input.custom_fields.target.phone,
         widget_id=action.widget_id,
     )
     db_event = TwilioCallEvent(
