@@ -59,6 +59,7 @@ def save_call(action: PhonePressureAction, call: CallInstance):
 
     with get_session() as session:
         session.add(db_call)
+        session.flush()
         session.add(db_event)
         session.commit()
 

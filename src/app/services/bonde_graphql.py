@@ -23,9 +23,11 @@ def create_widget_action(action: PhonePressureAction):
     """)
 
     variables = {
-        "activist": action.activist,
-        "input": action.input,
+        "activist": action.activist.model_dump(),
+        "input": action.input.model_dump(),
         "widget_id": action.widget_id,
     }
 
-    return client.execute(mutation, variable_values=variables)
+    resp = client.execute(mutation, variable_values=variables)
+    
+    return resp
