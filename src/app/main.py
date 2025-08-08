@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import create_database_and_tables, select_latest_call_event
 from app.models.phone_pressure import PhoneCallResponse, PhonePressureAction
 from app.models.twilio_callback import TwilioVoiceEvent
-from app.services.twilio import twilio_call, twilio_dial_callback, twilio_voice_callback
+from app.services.twilio import twilio_call, twilio_voice_callback, twilio_voice_dial_callback
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -25,6 +25,8 @@ app.add_middleware(
 
 @app.post("/phone/call")
 def make_phone_call(phone_call: PhonePressureAction) -> PhoneCallResponse:
+    print("make_phone_call")
+    print(phone_call)
     return twilio_call(phone_call)
 
 @app.get("/phone/status")
@@ -39,5 +41,5 @@ def receive_phone_callback(event: Annotated[TwilioVoiceEvent, Form()]) -> PhoneC
     return twilio_voice_callback(event)
 
 @app.post("/phone/dial_callback")
-def receive_phone_callback(event: Annotated[TwilioVoiceEvent, Form()]) -> PhoneCallResponse:
-    return twilio_dial_callback(event)
+def receive_dial_callback(event: Annotated[TwilioVoiceEvent, Form()]) -> PhoneCallResponse:
+    return twilio_voice_dial_callback(event)

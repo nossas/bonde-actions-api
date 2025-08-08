@@ -63,6 +63,16 @@ def save_call(action: PhonePressureAction, call: CallInstance):
         session.add(db_event)
         session.commit()
 
+def save_call_dial_event(event: TwilioVoiceEvent):
+    db_event = TwilioCallEvent(
+        call_sid=event.ParentCallSid,
+        call_status=event.CallStatus,
+    )
+
+    with get_session() as session:
+        session.add(db_event)
+        session.commit()
+        
 def save_call_event(event: TwilioVoiceEvent):
     db_event = TwilioCallEvent(
         call_sid=event.CallSid,

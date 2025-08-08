@@ -1,7 +1,7 @@
 from twilio.rest import Client
 from twilio.twiml.voice_response import Dial, VoiceResponse
 
-from app.database import save_call, save_call_event
+from app.database import save_call, save_call_event, save_call_dial_event
 from app.models.phone_pressure import PhoneCallResponse, PhonePressureAction
 from app.models.twilio_callback import TwilioVoiceEvent
 from app.services.bonde_graphql import create_widget_action
@@ -23,7 +23,7 @@ def twilio_call(action: PhonePressureAction) -> PhoneCallResponse:
         target_number,
         status_callback=f"{settings.callback_url}/phone/dial_callback",
         status_callback_method="POST",
-        status_callback_event="initiated ringing answered completed",
+        status_callback_event="ringing answered",
     )
     response.append(dial)
 
@@ -32,9 +32,11 @@ def twilio_call(action: PhonePressureAction) -> PhoneCallResponse:
         to=activist_number,
         status_callback=f"{settings.callback_url}/phone/status_callback",
         status_callback_method="POST",
-        status_callback_event=["initiated", "ringing", "answered", "completed"],
+        status_callback_event=["completed"],
         twiml=response,
     )
+    print("twilio_call")
+    print(call)
 
     action.input.custom_fields.call = call.sid
     action.input.custom_fields.status = call.status
@@ -44,12 +46,12 @@ def twilio_call(action: PhonePressureAction) -> PhoneCallResponse:
 
     return PhoneCallResponse(call=call.sid, status=call.status)
 
-def twilio_dial_callback(event: TwilioVoiceEvent) -> PhoneCallResponse:
-    print(vars(event))
-
-    return PhoneCallResponse(call=event.CallSid, status=event.CallStatus)
-
 def twilio_voice_callback(event: TwilioVoiceEvent) -> PhoneCallResponse:
     save_call_event(event)
 
     return PhoneCallResponse(call=event.CallSid, status=event.CallStatus)
+
+def twilio_voice_dial_callback(event: TwilioVoiceEvent) -> PhoneCallResponse:
+    save_call_dial_event(event)
+
+    return PhoneCallResponse(call=event.ParentCallSid, status=event.CallStatus)

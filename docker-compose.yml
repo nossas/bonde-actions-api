@@ -3,8 +3,8 @@ services:
     build:
       context: .
       dockerfile: ./compose/local/fastapi/Dockerfile
-    depends_on:
-      - postgres
+    # depends_on:
+    #   - postgres
     environment:
       - CALLBACK_URL=${CALLBACK_URL}
       - DATABASE_URL=${DATABASE_URL}
@@ -13,19 +13,20 @@ services:
       - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
       - TWILIO_PHONE_NUMBER=${TWILIO_PHONE_NUMBER}
     ports:
-      - 8000:8000
+      - 8001:8000
     volumes:
       - ./src/:/code/
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      - POSTGRES_DB=bonde
-      - POSTGRES_USER=bonde
-      - POSTGRES_PASSWORD=senha
-    volumes:
-      - db_data:/var/lib/postgresql/data/
-    ports:
-      - 5432:5432
 
-volumes:
-  db_data:
+  # postgres:
+  #   image: postgres:17-alpine
+  #   environment:
+  #     - POSTGRES_DB=bonde
+  #     - POSTGRES_USER=bonde
+  #     - POSTGRES_PASSWORD=senha
+  #   volumes:
+  #     - db_data:/var/lib/postgresql/data/
+  #   ports:
+  #     - 5432:5432
+
+# volumes:
+#   db_data:
