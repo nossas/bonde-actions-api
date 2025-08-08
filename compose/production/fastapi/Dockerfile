@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install --no-install-recommends -y curl gcc libpq-
 
 WORKDIR /code
 
+COPY ./src/app /code/app
+
 COPY ./compose/local/fastapi/requirements.txt /code/requirements.txt
 
 RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
