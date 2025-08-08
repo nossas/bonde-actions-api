@@ -18,7 +18,13 @@ def twilio_call(action: PhonePressureAction) -> PhoneCallResponse:
     client = get_twilio_client(settings)
 
     response = VoiceResponse()
-    dial = Dial(target_number, callerId=activist_number)
+    dial = Dial(callerId=activist_number)
+    dial.number(
+        target_number,
+        status_callback=f"{settings.callback_url}/phone/dial_callback",
+        status_callback_method="POST",
+        status_callback_event="initiated ringing answered completed",
+    )
     response.append(dial)
 
     call = client.calls.create(
@@ -37,6 +43,11 @@ def twilio_call(action: PhonePressureAction) -> PhoneCallResponse:
     create_widget_action(action)
 
     return PhoneCallResponse(call=call.sid, status=call.status)
+
+def twilio_dial_callback(event: TwilioVoiceEvent) -> PhoneCallResponse:
+    print(vars(event))
+
+    return PhoneCallResponse(call=event.CallSid, status=event.CallStatus)
 
 def twilio_voice_callback(event: TwilioVoiceEvent) -> PhoneCallResponse:
     save_call_event(event)
