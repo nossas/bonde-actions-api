@@ -21,9 +21,9 @@ def twilio_call(action: PhonePressureAction) -> PhoneCallResponse:
     dial = Dial(callerId=activist_number)
     dial.number(
         target_number,
-        status_callback=f"{settings.callback_url}/phone/dial_callback",
+        status_callback=f"{settings.callback_url}/phone/status_callback",
         status_callback_method="POST",
-        status_callback_event="ringing answered",
+        status_callback_event="initiated ringing answered completed",
     )
     response.append(dial)
 
@@ -32,11 +32,9 @@ def twilio_call(action: PhonePressureAction) -> PhoneCallResponse:
         to=activist_number,
         status_callback=f"{settings.callback_url}/phone/status_callback",
         status_callback_method="POST",
-        status_callback_event=["completed"],
+        status_callback_event=["initiated", "ringing", "answered", "completed"],
         twiml=response,
     )
-    print("twilio_call")
-    print(call)
 
     action.input.custom_fields.call = call.sid
     action.input.custom_fields.status = call.status
