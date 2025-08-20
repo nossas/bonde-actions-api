@@ -1,13 +1,13 @@
-from enum import Enum
+import enum
 from typing import List, Optional
 from datetime import datetime, timezone
 
 # from sqlalchemy import event
-from sqlalchemy import Column, DateTime, func
+from sqlalchemy import Column, DateTime, func, Enum
 from sqlmodel import SQLModel, Field, Relationship
 
 
-class CallStatus(str, Enum):
+class CallStatus(str, enum.Enum):
     # Ligação iniciada
     INITIATED = "initiated"
     QUEUED = "queued"
@@ -27,13 +27,13 @@ class CallStatus(str, Enum):
     def __str__(self):
         return self.value
 
-class CallReason(str, Enum):
+class CallReason(str, enum.Enum):
     ANSWERED_VOICEMAIL = "answered-voicemail"
     
     def __str__(self):
         return self.value
 
-class CallKind(str, Enum):
+class CallKind(str, enum.Enum):
     API = "api"
     DIAL = "dial"
     
@@ -52,8 +52,8 @@ class Call(SQLModel, table=True):
     from_call_sid: Optional[str] = Field(default=None, index=True)
     to_phone_number: str
     to_call_sid: Optional[str] = Field(default=None, index=True)
-    status: CallStatus = Field(default=CallStatus.INITIATED)
-    reason: Optional[CallReason] = Field(default=None)
+    status: CallStatus = Field(sa_column=Column(Enum(CallStatus, values_callable=lambda x: [e.value for e in x]), default=CallStatus.INITIATED))
+    reason: Optional[CallReason] = Field(sa_column=Column(Enum(CallReason, values_callable=lambda x: [e.value for e in x]), default=None))
     created_at: datetime = Field(default_factory=create_timestamp)
     updated_at: datetime = Field(
         sa_column=Column(
@@ -68,9 +68,9 @@ class TwilioCall(SQLModel, table=True):
     __tablename__ = "phone_twilio_calls"
     sid: str = Field(primary_key=True)
     call_id: int = Field(foreign_key="phone_calls.id", index=True)
-    status: CallStatus
+    status: CallStatus = Field(sa_column=Column(Enum(CallStatus, values_callable=lambda x: [e.value for e in x])))
     answered_by: Optional[str] = Field(default=None)
-    kind: CallKind
+    kind: CallKind = Field(sa_column=Column(Enum(CallKind, values_callable=lambda x: [e.value for e in x])))
     created_at: datetime = Field(default_factory=create_timestamp)
     updated_at: datetime = Field(
         sa_column=Column(

@@ -6,6 +6,7 @@ from sqlalchemy import pool
 from sqlmodel import SQLModel
 
 from alembic import context
+import alembic_postgresql_enum
 from app.models import *
 
 # this is the Alembic Config object, which provides

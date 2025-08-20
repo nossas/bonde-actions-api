@@ -179,7 +179,7 @@ async def call_status_callback(
 
     if twilio_call.status == CallStatus.COMPLETED:
         call = session.exec(
-            select(Call).where(Call.id == call_id, Call.status == CallStatus.RINGING),
+            select(Call).where(Call.id == call_id, Call.status.in_([CallStatus.RINGING, CallStatus.INITIATED])),
         ).first()
         
         twilio_call_dial = session.exec(

@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.16.4",
+    "alembic-postgresql-enum>=1.8.0",
     "fastapi>=0.116.1",
     "psycopg2-binary>=2.9.10",
     "pydantic>=2.11.7",
@@ -19,4 +20,6 @@ dependencies = [
 [dependency-groups]
 dev = [
     "fastapi-cli>=0.0.8",
+    "ipdb>=0.13.13",
+    "ipython>=9.4.0",
 ]
