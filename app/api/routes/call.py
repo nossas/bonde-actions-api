@@ -7,8 +7,15 @@ from twilio.twiml.voice_response import VoiceResponse, Dial
 from app.config import settings
 from app.logger import get_logger
 from app.db import SessionDep
-from app.models import Call, TwilioCall, CallReason, CallStatus, CallKind
-from app.api.typing import TwilioEventStatusCallback, TwilioGather
+from app.models import (
+    Call,
+    TwilioCall,
+    CallReason,
+    CallStatus,
+    CallKind,
+    CallAnsweredBy,
+)
+from app.api.typing import TwilioGather, CreateCallPayload
 
 
 logger = get_logger(__name__)
@@ -20,13 +27,14 @@ client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
 
 
 @router.post("/call")
-async def make_call(from_phone_number: str, to_phone_number: str, session: SessionDep):
-    logger.info(f"## Start Call to {from_phone_number}")
+async def make_call(payload: CreateCallPayload, session: SessionDep):
+    logger.info(f"## Start Call to {payload.from_phone_number}")
 
     try:
         # Inserir no banco de dados uma ligação
         call = Call(
-            from_phone_number=from_phone_number, to_phone_number=to_phone_number
+            from_phone_number=payload.from_phone_number,
+            to_phone_number=payload.to_phone_number,
         )
         session.add(call)
         session.flush()
@@ -47,7 +55,7 @@ async def make_call(from_phone_number: str, to_phone_number: str, session: Sessi
 
         # Realizar a chamada no Twilio
         twilio_call_response = client.calls.create(
-            to=from_phone_number,
+            to=payload.from_phone_number,
             from_=settings.twilio_phone_number,
             status_callback=f"{base_url}/call-status-callback/{call.id}",
             status_callback_method="POST",
@@ -125,9 +133,11 @@ async def dial_status_callback(
 
     if twilio_call.status == CallStatus.COMPLETED:
         call = session.exec(
-            select(Call).where(Call.id == call_id, Call.status == CallStatus.IN_PROGRESS),
+            select(Call).where(
+                Call.id == call_id, Call.status == CallStatus.IN_PROGRESS
+            ),
         ).first()
-        
+
         if call:
             logger.info("Tratar no caso de encerrar a ligação sem mapeamento")
 
@@ -179,27 +189,47 @@ async def call_status_callback(
 
     if twilio_call.status == CallStatus.COMPLETED:
         call = session.exec(
-            select(Call).where(Call.id == call_id, Call.status.in_([CallStatus.RINGING, CallStatus.INITIATED])),
+            select(Call).where(
+                Call.id == call_id,
+                Call.status.in_(
+                    [CallStatus.RINGING, CallStatus.INITIATED, CallStatus.IN_PROGRESS]
+                ),
+            ),
         ).first()
-        
+
         twilio_call_dial = session.exec(
-            select(TwilioCall).where(TwilioCall.call_id == call.id, TwilioCall.kind == CallKind.DIAL)
+            select(TwilioCall).where(
+                TwilioCall.call_id == call.id, TwilioCall.kind == CallKind.DIAL
+            )
         ).first()
-        
+
         # Nesse caso precisamos entender se o telefone foi atendido por humano
         # e se o problema foi na segunda ligação.
-        if call and twilio_call_dial and twilio_call_dial.answered_by != "human":
-            logger.info("Ligação foi atendida pelo Ativista, mas não foi atendida pelo alvo")
+        if (
+            call
+            and twilio_call_dial
+            and twilio_call_dial.answered_by != CallAnsweredBy.HUMAN
+        ):
+            logger.info(
+                "Ligação foi atendida pelo Ativista, mas não foi atendida pelo alvo"
+            )
             call.status = CallStatus.NO_ANSWER
             session.add(call)
             session.commit()
-        elif call and twilio_call_dial and twilio_call_dial.answered_by == "human":
+        elif (
+            call
+            and twilio_call_dial
+            and twilio_call_dial.answered_by == CallAnsweredBy.HUMAN
+        ):
             logger.info("Ligação foi atendida pelo Ativista, e pelo alvo")
             call.status = CallStatus.COMPLETED
             session.add(call)
             session.commit()
         else:
             logger.info("Tratar o caso de encerrar a ligação sem mapeamento")
+            call.status = CallStatus.BUSY
+            session.add(call)
+            session.commit()
 
     return {
         "call_id": call_id,
@@ -220,8 +250,12 @@ async def gather(
         )
     ).first()
 
-    if (gather.AnsweredBy in ("machine_start", "machine_end")) or (
-        twilio_call and twilio_call.answered_by in ("machine_start", "machine_end")
+    if (
+        gather.AnsweredBy in (CallAnsweredBy.MACHINE_START, CallAnsweredBy.MACHINE_END)
+    ) or (
+        twilio_call
+        and twilio_call.answered_by
+        in (CallAnsweredBy.MACHINE_START, CallAnsweredBy.MACHINE_END)
     ):
         # Testa duas hipóteses:
         # 1 - O próprio gather já responde com AnsweredBy
@@ -280,7 +314,21 @@ async def amd_status_callback(call_id: int, request: Request, session: SessionDe
     twilio_call = session.exec(
         select(TwilioCall).where(TwilioCall.sid == form.get("CallSid"))
     ).first()
+    logger.info("## AMD Status Callback -> select")
+    logger.info(twilio_call)
+
     twilio_call.answered_by = form.get("AnsweredBy")
+
+    logger.info("## AMD Status Callback -> twilio_call")
+    logger.info(twilio_call)
+    if (
+        twilio_call.status == CallStatus.IN_PROGRESS
+        and twilio_call.answered_by == CallAnsweredBy.HUMAN
+    ):
+        call = session.exec(select(Call).where(Call.id == call_id)).first()
+        call.status = CallStatus.IN_PROGRESS
+        session.add(call)
+
     session.add(twilio_call)
     session.commit()
 
@@ -288,4 +336,15 @@ async def amd_status_callback(call_id: int, request: Request, session: SessionDe
         "call_id": call_id,
         "call_sid": twilio_call.sid,
         "call_answered_by": twilio_call.answered_by,
+    }
+
+
+@router.get("/status/{call_id}")
+async def status(call_id: int, session: SessionDep):
+    call = session.exec(select(Call).where(Call.id == call_id)).first()
+
+    return {
+        "call_id": call_id,
+        # TODO: Entender o retorno desse status
+        "status": call.status,
     }

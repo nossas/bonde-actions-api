@@ -40,6 +40,14 @@ class CallKind(str, enum.Enum):
     def __str__(self):
         return self.value
 
+class CallAnsweredBy(str, enum.Enum):
+    HUMAN = "human"
+    MACHINE_START = "machine_start"
+    MACHINE_END = "machine_end"
+    
+    def __str__(self):
+        return self.value
+
 
 def create_timestamp():
     return datetime.now(timezone.utc)
