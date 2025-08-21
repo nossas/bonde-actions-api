@@ -188,6 +188,7 @@ async def call_status_callback(
         session.commit()
 
     if twilio_call.status == CallStatus.COMPLETED:
+        # Mapeando ligação completada
         call = session.exec(
             select(Call).where(
                 Call.id == call_id,
@@ -196,40 +197,46 @@ async def call_status_callback(
                 ),
             ),
         ).first()
+            
+        if call:
+            # Buscar a Ligação Twilio da ponta (Alvo)
+            twilio_call_dial = session.exec(
+                select(TwilioCall).where(
+                    TwilioCall.call_id == call.id, TwilioCall.kind == CallKind.DIAL
+                )
+            ).first()
 
-        twilio_call_dial = session.exec(
-            select(TwilioCall).where(
-                TwilioCall.call_id == call.id, TwilioCall.kind == CallKind.DIAL
-            )
-        ).first()
-
-        # Nesse caso precisamos entender se o telefone foi atendido por humano
-        # e se o problema foi na segunda ligação.
-        if (
-            call
-            and twilio_call_dial
-            and twilio_call_dial.answered_by != CallAnsweredBy.HUMAN
-        ):
-            logger.info(
-                "Ligação foi atendida pelo Ativista, mas não foi atendida pelo alvo"
-            )
-            call.status = CallStatus.NO_ANSWER
-            session.add(call)
-            session.commit()
-        elif (
-            call
-            and twilio_call_dial
-            and twilio_call_dial.answered_by == CallAnsweredBy.HUMAN
-        ):
-            logger.info("Ligação foi atendida pelo Ativista, e pelo alvo")
-            call.status = CallStatus.COMPLETED
-            session.add(call)
-            session.commit()
+            # Nesse caso precisamos entender se o telefone foi atendido por humano
+            # e se o problema foi na segunda ligação.
+            if (
+                call
+                and twilio_call_dial
+                and twilio_call_dial.answered_by != CallAnsweredBy.HUMAN
+            ):
+                logger.info(
+                    "Ligação foi atendida pelo Ativista, mas não foi atendida pelo alvo"
+                )
+                call.status = CallStatus.NO_ANSWER
+                session.add(call)
+                session.commit()
+            elif (
+                call
+                and twilio_call_dial
+                and twilio_call_dial.answered_by == CallAnsweredBy.HUMAN
+            ):
+                logger.info("Ligação foi atendida pelo Ativista, e pelo alvo")
+                call.status = CallStatus.COMPLETED
+                session.add(call)
+                session.commit()
+            else:
+                logger.info("Tratar o caso de encerrar a ligação sem mapeamento")
+                call.status = CallStatus.BUSY
+                session.add(call)
+                session.commit()
         else:
-            logger.info("Tratar o caso de encerrar a ligação sem mapeamento")
-            call.status = CallStatus.BUSY
-            session.add(call)
-            session.commit()
+            call = session.exec(select(Call).where(Call.id == call_id)).first()
+            logger.info("## Call Status Callback ->> Comportamento não esperado")
+            logger.info(call)
 
     return {
         "call_id": call_id,
