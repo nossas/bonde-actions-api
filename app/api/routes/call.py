@@ -1,21 +1,15 @@
-from typing import Annotated
-from fastapi import APIRouter, Response, Request, Form
+from fastapi import APIRouter, Response, Request
 from sqlmodel import select
 from twilio.rest import Client
-from twilio.twiml.voice_response import VoiceResponse, Dial
+from twilio.twiml.voice_response import VoiceResponse, Dial, Gather
 
 from app.config import settings
 from app.logger import get_logger
 from app.db import SessionDep
-from app.models import (
-    Call,
-    TwilioCall,
-    CallReason,
-    CallStatus,
-    CallKind,
-    CallAnsweredBy,
-)
-from app.api.typing import TwilioGather, CreateCallPayload
+from app.models import Call, TwilioCall, TwilioCallEvent
+from app.enum import EventType, TwilioCallStatus, TwilioAnsweredBy, CallState
+from app.machine import CallMachine
+from app.api.typing import CreateCallPayload
 
 
 logger = get_logger(__name__)
@@ -27,331 +21,422 @@ client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
 
 
 @router.post("/call")
-async def make_call(payload: CreateCallPayload, session: SessionDep):
-    logger.info(f"## Start Call to {payload.from_phone_number}")
+async def call(payload: CreateCallPayload, session: SessionDep):
+    """Inicia uma ligação lógica e dispara instrução Twiml
+
+    Args:
+        payload (CreateCallPayload): _description_
+        session (SessionDep): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    # Criar ligação lógica
+    call = Call(
+        from_number=payload.from_phone_number, to_number=payload.to_phone_number
+    )
+    session.add(call)
+    session.flush()
+
+    # Preparar Instrução da Chamada no Twilio
+    resp = VoiceResponse()
+    resp.say(
+        "Olá! Para confirmar o redirecionamento informe seu nome.",
+        voice="Polly.Camila",
+        language="pt-BR",
+    )
+
+    # Preparar Gather para fazer uma verificação de voz
+    gather = Gather(
+        input="speech", timeout=5, action=f"{base_url}/dial/{call.id}", method="POST"
+    )
+    resp.append(gather)
+
+    # Se ninguém respondeu, desliga a ligação:
+    resp.hangup()
 
     try:
-        # Inserir no banco de dados uma ligação
-        call = Call(
-            from_phone_number=payload.from_phone_number,
-            to_phone_number=payload.to_phone_number,
-        )
-        session.add(call)
-        session.flush()
-
-        # Prepara uma verificação de voz, para evitar o redirecionamento quando ligação cai na caixa postal
-        resp = VoiceResponse()
-        resp.say(
-            "Olá! Para confirmar o redirecionamento informe seu nome.",
-            voice="Polly.Camila",
-            language="pt-BR",
-        )
-        resp.gather(
-            input="speech",
-            timeout=3,
-            action=f"{base_url}/gather/{call.id}",
-            method="POST",
-        )
-
-        # Realizar a chamada no Twilio
         twilio_call_response = client.calls.create(
             to=payload.from_phone_number,
             from_=settings.twilio_phone_number,
-            status_callback=f"{base_url}/call-status-callback/{call.id}",
+            status_callback=f"{base_url}/status-callback/{call.id}",
             status_callback_method="POST",
             status_callback_event=["initiated", "ringing", "answered", "completed"],
             machine_detection="Enable",
             async_amd=True,
             async_amd_status_callback=f"{base_url}/amd-status-callback/{call.id}",
             async_amd_status_callback_method="POST",
-            twiml=resp,
+            twiml=str(resp),
         )
 
-        # Atualizar a referência da Chamada do Twilio na nossa Chamada
-        call.from_call_sid = twilio_call_response.sid
-        session.add(call)
-        session.flush()
-
-        # Inserir a Chamada do Twilio no banco de dados com o relacionamento
+        # Criar TwilioCall
         twilio_call = TwilioCall(
             sid=twilio_call_response.sid,
             status=twilio_call_response.status,
-            call_id=call.id,
-            kind=CallKind.API,
+            direction=twilio_call_response.direction,
+            answered_by=twilio_call_response.answered_by,
+            parent_call=call,
         )
         session.add(twilio_call)
+        session.flush()
+
+        logger.info("/call -> twilio_call")
+        logger.info(twilio_call)
+
+        # Criar TwilioCallEvent
+        twilio_call_event = TwilioCallEvent(
+            twilio_call=twilio_call,
+            event_type=EventType.INSTRUCTION,
+            twilio_response={
+                "ApiVersion": twilio_call_response.api_version,
+                "AnsweredBy": twilio_call_response.answered_by,
+                "DateCreated": twilio_call_response.date_created,
+                "Direction": twilio_call_response.direction,
+                "Duration": twilio_call_response.duration,
+                "From": twilio_call_response._from,
+                "To": twilio_call_response.to,
+                "CallSid": twilio_call_response.sid,
+                "CallStatus": twilio_call_response.status,
+                "StartTime": twilio_call_response.start_time,
+                "Uri": twilio_call_response.uri,
+            },
+        )
+        session.add(twilio_call_event)
         session.commit()
 
+        logger.info("/call -> twilio_call_event")
+        logger.info(twilio_call_event)
+
         return {
-            "call_sid": twilio_call_response.sid,
             "call_id": call.id,
-            "call_status": twilio_call.status,
+            "twilio_call_sid": twilio_call.sid,
+            "twilio_call_status": twilio_call.status,
         }
     except Exception as e:
         session.rollback()
-        logger.error(f"Error in make_call: {e}")
+        logger.error(f"Error /call: {e}")
+        raise
 
 
-@router.post("/dial-status-callback/{call_id}")
-async def dial_status_callback(
-    call_id: int,
-    request: Request,
-    session: SessionDep,
-    # event: Annotated[TwilioEventStatusCallback, Form()]
-):
-    form = await request.form()
-    logger.info("## Dial Status Callback")
-    logger.info(form)
+@router.post("/status-callback/{call_id}")
+async def status_callback(call_id: str, request: Request, session: SessionDep):
+    """Escuta os eventos da ligação de ORIGEM (outbound-api).
 
-    # create_or_update_twilio_call
-    twilio_call = session.exec(
-        select(TwilioCall).where(TwilioCall.sid == form.get("CallSid"))
-    ).first()
-    if twilio_call:
-        twilio_call.status = form.get("CallStatus")
+    Args:
+        call_id (str): _description_
+        request (Request): _description_
+        session (SessionDep): _description_
+    """
+    payload = await request.form()
 
-        answered_by = form.get("AnsweredBy", None)
-        if answered_by:
-            twilio_call.answered_by = answered_by
+    twilio_call_sid = payload.get("CallSid")
+    twilio_call_status = payload.get("CallStatus")
 
-        session.add(twilio_call)
-        session.commit()
-    else:
-        twilio_call = TwilioCall(
-            call_id=call_id,
-            sid=form.get("CallSid"),
-            status=form.get("CallStatus"),
-            kind=CallKind.DIAL,
-        )
+    # 1. Buscar TwilioCall
+    statement = select(TwilioCall).where(TwilioCall.sid == twilio_call_sid)
+    twilio_call = session.exec(statement).first()
+    if not twilio_call:
+        return {"error": "TwilioCall not found"}, 404
 
-        answered_by = form.get("AnsweredBy", None)
-        if answered_by:
-            twilio_call.answered_by = answered_by
-
-        session.add(twilio_call)
-        session.commit()
-
-    if twilio_call.status == CallStatus.COMPLETED:
-        call = session.exec(
-            select(Call).where(
-                Call.id == call_id, Call.status == CallStatus.IN_PROGRESS
-            ),
-        ).first()
-
-        if call:
-            logger.info("Tratar no caso de encerrar a ligação sem mapeamento")
-
-    return {
-        "call_id": call_id,
-        "call_sid": twilio_call.sid,
-        "call_status": twilio_call.status,
-        "call_answered_by": twilio_call.answered_by,
-    }
-
-
-@router.post("/call-status-callback/{call_id}")
-async def call_status_callback(
-    call_id: int,
-    request: Request,
-    session: SessionDep,
-    # event: Annotated[TwilioEventStatusCallback, Form()]
-):
-    form = await request.form()
-    logger.info("## Call Status Callback")
-    logger.info(form)
-
-    twilio_call = session.exec(
-        select(TwilioCall).where(TwilioCall.sid == form.get("CallSid"))
-    ).first()
-    if twilio_call:
-        twilio_call.status = form.get("CallStatus")
-
-        answered_by = form.get("AnsweredBy", None)
-        if answered_by:
-            twilio_call.answered_by = answered_by
-
-        session.add(twilio_call)
-        session.commit()
-    else:
-        twilio_call = TwilioCall(
-            call_id=call_id,
-            sid=form.get("CallSid"),
-            status=form.get("CallStatus"),
-            kind=CallKind.API,
-        )
-
-        answered_by = form.get("AnsweredBy", None)
-        if answered_by:
-            twilio_call.answered_by = answered_by
-
-        session.add(twilio_call)
-        session.commit()
-
-    if twilio_call.status == CallStatus.COMPLETED:
-        # Mapeando ligação completada
-        call = session.exec(
-            select(Call).where(
-                Call.id == call_id,
-                Call.status.in_(
-                    [CallStatus.RINGING, CallStatus.INITIATED, CallStatus.IN_PROGRESS]
-                ),
-            ),
-        ).first()
-            
-        if call:
-            # Buscar a Ligação Twilio da ponta (Alvo)
-            twilio_call_dial = session.exec(
-                select(TwilioCall).where(
-                    TwilioCall.call_id == call.id, TwilioCall.kind == CallKind.DIAL
-                )
-            ).first()
-
-            # Nesse caso precisamos entender se o telefone foi atendido por humano
-            # e se o problema foi na segunda ligação.
-            if (
-                call
-                and twilio_call_dial
-                and twilio_call_dial.answered_by != CallAnsweredBy.HUMAN
-            ):
-                logger.info(
-                    "Ligação foi atendida pelo Ativista, mas não foi atendida pelo alvo"
-                )
-                call.status = CallStatus.NO_ANSWER
-                session.add(call)
-                session.commit()
-            elif (
-                call
-                and twilio_call_dial
-                and twilio_call_dial.answered_by == CallAnsweredBy.HUMAN
-            ):
-                logger.info("Ligação foi atendida pelo Ativista, e pelo alvo")
-                call.status = CallStatus.COMPLETED
-                session.add(call)
-                session.commit()
-            else:
-                logger.info("Tratar o caso de encerrar a ligação sem mapeamento")
-                call.status = CallStatus.BUSY
-                session.add(call)
-                session.commit()
-        else:
-            call = session.exec(select(Call).where(Call.id == call_id)).first()
-            logger.info("## Call Status Callback ->> Comportamento não esperado")
-            logger.info(call)
-
-    return {
-        "call_id": call_id,
-        "call_sid": twilio_call.sid,
-        "call_status": twilio_call.status,
-        "call_answered_by": twilio_call.answered_by,
-    }
-
-
-@router.post("/gather/{call_id}")
-async def gather(
-    call_id: int, session: SessionDep, gather: Annotated[TwilioGather, Form()]
-):
-    call = session.exec(select(Call).where(Call.id == call_id)).first()
-    twilio_call = session.exec(
-        select(TwilioCall).where(
-            TwilioCall.call_id == call.id, TwilioCall.kind == CallKind.API
-        )
-    ).first()
-
-    if (
-        gather.AnsweredBy in (CallAnsweredBy.MACHINE_START, CallAnsweredBy.MACHINE_END)
-    ) or (
-        twilio_call
-        and twilio_call.answered_by
-        in (CallAnsweredBy.MACHINE_START, CallAnsweredBy.MACHINE_END)
-    ):
-        # Testa duas hipóteses:
-        # 1 - O próprio gather já responde com AnsweredBy
-        # 2 - o AMD Status Callback já respondeu com AnsweredBy antes de executar o Gather
-        logger.info(f"## Gather Complete, caixa postal")
-
-        resp = VoiceResponse()
-        resp.hangup()
-
-        # Ligação para o ativista cai na caixa postal e redirecionamento não acontece
-        call.status = CallStatus.FAILED
-        call.reason = CallReason.ANSWERED_VOICEMAIL
-        session.add(call)
-        session.commit()
-
-        return Response(content=str(resp), media_type="application/xml")
-
-    # Realiza o redirecionamento
-    logger.info(f"## Gather Complete, redirect to {call.to_phone_number}")
-    logger.info(gather)
-
-    resp = VoiceResponse()
-    resp.say(
-        "Obrigado! Vamos te conectar ao alvo, aguarde na linha",
-        voice="Polly.Camila",
-        language="pt-BR",
+    # 2. Criar TwilioCallEvent
+    twilio_call_event = TwilioCallEvent(
+        twilio_call=twilio_call,
+        event_type=EventType.STATUS_CALLBACK,
+        twilio_response=dict(payload),
     )
+    session.add(twilio_call_event)
+    session.flush()
 
-    dial = Dial(caller_id=call.from_phone_number)
-    dial.number(
-        call.to_phone_number,
-        status_callback=f"{base_url}/dial-status-callback/{call.id}",
-        status_callback_event="ringing answered completed",
-        status_callback_method="POST",
-        machine_detection="Enable",
-        amd_status_callback=f"{base_url}/amd-status-callback/{call.id}",
-        amd_status_callback_method="POST",
-    )
-    resp.append(dial)
+    # 3. Atualizar TwilioCall
+    try:
+        twilio_call.status = TwilioCallStatus(twilio_call_status)
+        session.add(twilio_call)
+        session.flush()
+    except ValueError:
+        logger.warning(f"Status inesperado do Twilio: {twilio_call_status}")
+        session.rollback()
+        raise
 
-    # Confirma a instrução de redirecionamento e inicia o processo de ligação para o alvo
-    call.status = CallStatus.RINGING
+    # 4. Atualizar Call (via FSM)
+    call = twilio_call.parent_call
+    machine = CallMachine(call)
+    logger.info(payload)
+    
+    match twilio_call_status:
+        case TwilioCallStatus.INITIATED:
+            # Ignoramos o status de iniciado, não serve pra nossa lógica
+            pass
+        case  TwilioCallStatus.RINGING:
+            machine.call()
+        case TwilioCallStatus.IN_PROGRESS:
+            machine.attend()
+        case TwilioCallStatus.COMPLETED:
+            machine.complete()
+        case _:
+            logger.info("@@ Diferente de INITIATED, RINGING, IN_PROGRESS ou COMPLETED")
+
     session.add(call)
     session.commit()
+
+    return {
+        "call_id": call_id,
+        "twilio_call_sid": twilio_call_sid,
+        "twilio_call_status": twilio_call_status,
+    }
+
+
+@router.post("/amd-status-callback/{call_id}")
+async def amd_status_callback(call_id: str, request: Request, session: SessionDep):
+    """_summary_
+
+    Args:
+        call_id (str): _description_
+        request (Request): _description_
+        session (SessionDep): _description_
+    """
+    payload = await request.form()
+    logger.info(payload)
+
+    answered_by = payload.get("AnsweredBy")
+    twilio_call_sid = payload.get("CallSid")
+
+    # 1. Buscar TwilioCall
+    statement = select(TwilioCall).where(TwilioCall.sid == twilio_call_sid)
+    twilio_call = session.exec(statement).first()
+    if not twilio_call:
+        return {"error": "TwilioCall not found"}, 404
+
+    # 2. Registrar evento
+    twilio_call_event = TwilioCallEvent(
+        twilio_call=twilio_call,
+        event_type=EventType.AMD_CALLBACK,
+        payload=dict(payload),
+    )
+    session.add(twilio_call_event)
+    session.flush()
+
+    # 3. Atualizar TwilioCall
+    twilio_call.answered_by = answered_by
+    session.add(twilio_call)
+
+    # 3. Atualizar Call via FSM
+    call = twilio_call.parent_call
+    machine = CallMachine(call)
+
+    if answered_by == TwilioAnsweredBy.HUMAN:
+        machine.connect()
+    else:
+        machine.fail()
+
+    session.add(call)
+    session.commit()
+
+    return {
+        "call_id": call.id,
+        "twilio_call_sid": twilio_call_sid,
+        "twilio_call_answered_by": answered_by,
+    }
+
+
+@router.post("/dial/{call_id}")
+async def dial(call_id: str, request: Request, session: SessionDep):
+    """Confere o estada da ligação lógica para decidir fazer o redirecionamento ou encerrar.
+
+    Args:
+        call_id (str): _description_
+        request (Request): _description_
+        session (SessionDep): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    payload = await request.form()
+    logger.info("/dial ->> payload")
+    logger.info(payload)
+
+    twilio_call_sid = payload.get("CallSid")
+
+    # 1. Buscar TwilioCall
+    statement = select(TwilioCall).where(TwilioCall.sid == twilio_call_sid)
+    twilio_call = session.exec(statement).first()
+    if not twilio_call:
+        return {"error": "TwilioCall not found"}, 404
+
+    call = twilio_call.parent_call
+    if call.state == CallState.REDIRECTING:
+        # Preparar a instrução Twiml para fazer o redirecionamento
+        resp = VoiceResponse()
+        resp.say(
+            "Obrigado! Vamos te conectar ao alvo, aguarde na linha",
+            voice="Polly.Camila",
+            language="pt-BR",
+        )
+
+        dial = Dial(caller_id=call.from_number)
+        dial.number(
+            call.to_number,
+            status_callback=f"{base_url}/dial-status-callback/{call.id}",
+            status_callback_event="initiated ringing answered completed",
+            status_callback_method="POST",
+            machine_detection="Enable",
+            amd_status_callback=f"{base_url}/dial-amd-status-callback/{call.id}",
+            amd_status_callback_method="POST",
+        )
+        resp.append(dial)
+    else:
+        logger.info("@@ Reconhecimento de voz humana falhou")
+        logger.info(call)
+
+        # Instrução para desligar a chamada
+        resp = VoiceResponse()
+        resp.hangup()
 
     return Response(content=str(resp), media_type="application/xml")
 
 
-@router.post("/amd-status-callback/{call_id}")
-async def amd_status_callback(call_id: int, request: Request, session: SessionDep):
-    form = await request.form()
-    logger.info("## AMD Status Callback")
-    logger.info(form)
+@router.post("/dial-status-callback/{call_id}")
+async def dial_status_callback(call_id: str, request: Request, session: SessionDep):
+    """Escuta os eventos da ligação de DESTINO (DIAL inbound).
 
-    # call = session.exec(select(Call).where(Call.id == call_id)).first()
-    twilio_call = session.exec(
-        select(TwilioCall).where(TwilioCall.sid == form.get("CallSid"))
-    ).first()
-    logger.info("## AMD Status Callback -> select")
-    logger.info(twilio_call)
+    Args:
+        call_id (str): _description_
+        request (Request): _description_
+        session (SessionDep): _description_
+    """
+    payload = await request.form()
+    logger.info("/dial-status-callback ->> payload")
+    logger.info(payload)
 
-    twilio_call.answered_by = form.get("AnsweredBy")
+    twilio_call_sid = payload.get("CallSid")
+    twilio_call_status = payload.get("CallStatus")
 
-    logger.info("## AMD Status Callback -> twilio_call")
-    logger.info(twilio_call)
-    if (
-        twilio_call.status == CallStatus.IN_PROGRESS
-        and twilio_call.answered_by == CallAnsweredBy.HUMAN
-    ):
-        call = session.exec(select(Call).where(Call.id == call_id)).first()
-        call.status = CallStatus.IN_PROGRESS
-        session.add(call)
+    # 1. Buscar ligação do twilio na base e caso não exista criar novo registro
+    statement = select(TwilioCall).where(TwilioCall.sid == twilio_call_sid)
+    twilio_call = session.exec(statement).first()
+    if not twilio_call:
+        twilio_call = TwilioCall(
+            parent_call_id=call_id,
+            status=twilio_call_status,
+            sid=twilio_call_sid,
+            direction=payload.get("Direction"),
+            answered_by=payload.get("AnsweredBy"),
+        )
+        session.add(twilio_call)
+        session.flush()
+    else:
+        twilio_call.status = twilio_call_status
+        if payload.get("AnsweredBy"):
+            twilio_call.answered_by = payload.get("AnsweredBy")
 
-    session.add(twilio_call)
+        session.add(twilio_call)
+
+    # 2. Registrar evento
+    twilio_call_event = TwilioCallEvent(
+        twilio_call=twilio_call,
+        event_type=EventType.STATUS_CALLBACK,
+        payload=dict(payload),
+    )
+    session.add(twilio_call_event)
+    session.flush()
+
+    # 3. Atualizar Call via FSM
+    call = twilio_call.parent_call
+    machine = CallMachine(call)
+
+    match twilio_call_status:
+        case TwilioCallStatus.INITIATED:
+            # Ignoramos o status de iniciado, não serve pra nossa lógica
+            pass
+        case TwilioCallStatus.QUEUED:
+            # Ignoramos o status de iniciado, não serve pra nossa lógica
+            pass
+        case  TwilioCallStatus.RINGING:
+            machine.dial_call()
+        case TwilioCallStatus.IN_PROGRESS:
+            machine.dial_attend()
+        case TwilioCallStatus.NO_ANSWER:
+            machine.dial_voicemail()
+        case TwilioCallStatus.COMPLETED:
+            machine.complete()
+        case _:
+            logger.info("@@ Diferente de INITIATED, QUEUED, RINGING, IN_PROGRESS ou COMPLETED")
+
+    session.add(call)
     session.commit()
 
     return {
-        "call_id": call_id,
-        "call_sid": twilio_call.sid,
-        "call_answered_by": twilio_call.answered_by,
+        "call_id": call.id,
+        "twilio_call_sid": twilio_call_sid,
+        "twilio_call_status": twilio_call_status,
     }
 
 
-@router.get("/status/{call_id}")
-async def status(call_id: int, session: SessionDep):
-    call = session.exec(select(Call).where(Call.id == call_id)).first()
+@router.post("/dial-amd-status-callback/{call_id}")
+async def dial_amd_status_callback(call_id: str, request: Request, session: SessionDep):
+    """_summary_
+
+    Args:
+        call_id (str): _description_
+        request (Request): _description_
+        session (SessionDep): _description_
+    """
+    payload = await request.form()
+    logger.info("/dial-amd-status-callback ->> payload")
+    logger.info(payload)
+
+    answered_by = payload.get("AnsweredBy")
+    twilio_call_sid = payload.get("CallSid")
+
+    # 1. Buscar TwilioCall
+    statement = select(TwilioCall).where(TwilioCall.sid == twilio_call_sid)
+    twilio_call = session.exec(statement).first()
+    if not twilio_call:
+        return {"error": "TwilioCall not found"}, 404
+
+    # 2. Registrar evento
+    twilio_call_event = TwilioCallEvent(
+        twilio_call=twilio_call,
+        event_type=EventType.AMD_CALLBACK,
+        payload=dict(payload),
+    )
+    session.add(twilio_call_event)
+    session.flush()
+
+    # 3. Atualizar TwilioCall
+    twilio_call.answered_by = answered_by
+    session.add(twilio_call)
+
+    # 3. Atualizar Call via FSM
+    call = twilio_call.parent_call
+    machine = CallMachine(call)
+
+    if answered_by == TwilioAnsweredBy.HUMAN:
+        machine.dial_connect()
+    elif answered_by in (
+        TwilioAnsweredBy.MACHINE_START,
+        TwilioAnsweredBy.MACHINE_END,
+        TwilioAnsweredBy.FAX,
+    ):
+        machine.dial_voicemail()
+    else:
+        machine.fail()
+
+    session.add(call)
+    session.commit()
 
     return {
-        "call_id": call_id,
-        # TODO: Entender o retorno desse status
-        "status": call.status,
+        "call_id": call.id,
+        "twilio_call_sid": twilio_call_sid,
+        "twilio_call_answered_by": answered_by,
     }
+
+
+# @router.get("/status/{call_id}")
+# async def status(call_id: int, session: SessionDep):
+#     call = session.exec(select(Call).where(Call.id == call_id)).first()
+
+#     return {
+#         "call_id": call_id,
+#         # TODO: Entender o retorno desse status
+#         "status": call.status,
+#     }
