@@ -5,6 +5,7 @@ from twilio.twiml.voice_response import VoiceResponse, Gather
 from app.config import settings
 from app.models import Call, TwilioCall, TwilioCallEvent
 from app.enum import TwilioCallStatus
+from app.graphql import create_widget_action_gql
 
 
 def get_mock_call(attrs = {}):
@@ -32,7 +33,7 @@ def get_payload():
     }
 
 
-def test_call_success(client, mocker, session):
+def test_call_success(client, mocker, session, mock_graphql_client):
     mock_client = mocker.patch("app.api.routes.call.client")
     
     # Simula a resposta completa do Twilio
@@ -47,7 +48,7 @@ def test_call_success(client, mocker, session):
     assert resp.json()["twilio_call_sid"] == mock_response.sid
 
 
-def test_call_create_event(client, mocker, session):
+def test_call_create_event(client, mocker, session, mock_graphql_client):
     mock_client = mocker.patch("app.api.routes.call.client")
     
     # Simula a resposta completa do Twilio
@@ -64,7 +65,7 @@ def test_call_create_event(client, mocker, session):
     assert twilio_call_event.twilio_call_sid == twilio_call.sid
 
 
-def test_call_twilio_instruction_gather(client, mocker, session):
+def test_call_twilio_instruction_gather(client, mocker, session, mock_graphql_client):
     mock_client = mocker.patch("app.api.routes.call.client")
     
     # Simula a resposta completa do Twilio
@@ -92,3 +93,27 @@ def test_call_twilio_instruction_gather(client, mocker, session):
         async_amd_status_callback_method="POST",
         twiml=expected_twiml,
     )
+
+
+def test_call_graphql_execute(client, mocker, mock_graphql_client, session):
+    mock_client = mocker.patch("app.api.routes.call.client")
+    
+    
+    # Simula a resposta completa do Twilio
+    mock_response = get_mock_call()
+    mock_client.calls.create.return_value = mock_response
+    
+    payload = get_payload()
+    client.post("/v1/phone/call", json=payload)
+    
+    call = session.exec(select(Call)).first()
+    
+    mock_graphql_client.execute_async.assert_awaited_once()
+    assert create_widget_action_gql == mock_graphql_client.execute_async.call_args[0][0]
+    assert {
+        "widget_id": payload.get("widget_id"),
+        "activist": payload.get("activist"),
+        "input": {
+            "custom_fields": { "call": call.id }
+        }
+    } == mock_graphql_client.execute_async.call_args[1].get("variable_values")

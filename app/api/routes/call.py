@@ -6,6 +6,7 @@ from twilio.twiml.voice_response import VoiceResponse, Dial, Gather
 from app.config import settings
 from app.logger import get_logger
 from app.db import SessionDep
+from app.graphql import GraphQLClientDep, create_widget_action_gql
 from app.models import Call, TwilioCall, TwilioCallEvent
 from app.enum import EventType, TwilioCallStatus, TwilioAnsweredBy, CallState
 from app.machine import CallMachine
@@ -21,7 +22,9 @@ client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
 
 
 @router.post("/call")
-async def call(payload: CreateCallPayload, session: SessionDep):
+async def call(
+    payload: CreateCallPayload, session: SessionDep, graphql_client: GraphQLClientDep
+):
     """Inicia uma ligação lógica e dispara instrução Twiml
 
     Args:
@@ -35,9 +38,7 @@ async def call(payload: CreateCallPayload, session: SessionDep):
     to_number = payload.target.phone
 
     # Criar ligação lógica
-    call = Call(
-        from_number=from_number, to_number=to_number
-    )
+    call = Call(from_number=from_number, to_number=to_number)
     session.add(call)
     session.flush()
 
@@ -110,6 +111,15 @@ async def call(payload: CreateCallPayload, session: SessionDep):
         logger.info("/call -> twilio_call_event")
         logger.info(twilio_call_event)
 
+        # Insere uma ação na API do BONDE
+        await graphql_client.execute_async(
+            create_widget_action_gql, variable_values=dict(
+                widget_id=payload.widget_id,
+                activist=payload.activist.model_dump(),
+                input=dict(custom_fields=dict(call=call.id))
+            )
+        )
+
         return {
             "call_id": call.id,
             "twilio_call_sid": twilio_call.sid,
@@ -164,12 +174,12 @@ async def status_callback(call_id: str, request: Request, session: SessionDep):
     call = twilio_call.parent_call
     machine = CallMachine(call)
     logger.info(payload)
-    
+
     match twilio_call_status:
         case TwilioCallStatus.INITIATED:
             # Ignoramos o status de iniciado, não serve pra nossa lógica
             pass
-        case  TwilioCallStatus.RINGING:
+        case TwilioCallStatus.RINGING:
             machine.call()
         case TwilioCallStatus.IN_PROGRESS:
             machine.attend()
@@ -353,7 +363,7 @@ async def dial_status_callback(call_id: str, request: Request, session: SessionD
         case TwilioCallStatus.QUEUED:
             # Ignoramos o status de iniciado, não serve pra nossa lógica
             pass
-        case  TwilioCallStatus.RINGING:
+        case TwilioCallStatus.RINGING:
             machine.dial_call()
         case TwilioCallStatus.IN_PROGRESS:
             machine.dial_attend()
@@ -362,7 +372,9 @@ async def dial_status_callback(call_id: str, request: Request, session: SessionD
         case TwilioCallStatus.COMPLETED:
             machine.complete()
         case _:
-            logger.info("@@ Diferente de INITIATED, QUEUED, RINGING, IN_PROGRESS ou COMPLETED")
+            logger.info(
+                "@@ Diferente de INITIATED, QUEUED, RINGING, IN_PROGRESS ou COMPLETED"
+            )
 
     session.add(call)
     session.commit()
@@ -441,18 +453,20 @@ async def status(call_id: str, session: SessionDep):
     status = None
     if call.state in (CallState.INITIATED, CallState.RINGING, CallState.ANSWERED):
         status = "initiated"
-    elif call.state in (CallState.FAILED, ):
+    elif call.state in (CallState.FAILED,):
         status = "canceled"
-    elif call.state in (CallState.CONNECTED, ):
+    elif call.state in (CallState.CONNECTED,):
         status = "in-progress"
-    elif call.state in (CallState.REDIRECTING, CallState.DESTINATION_INITIATED, CallState.DESTINATION_RINGING, CallState.DESTINATION_ANSWERED):
+    elif call.state in (
+        CallState.REDIRECTING,
+        CallState.DESTINATION_INITIATED,
+        CallState.DESTINATION_RINGING,
+        CallState.DESTINATION_ANSWERED,
+    ):
         status = "ringing"
-    elif call.state in (CallState.NO_ANSWERED, ):
+    elif call.state in (CallState.NO_ANSWERED,):
         status = "no-answer"
-    elif call.state in (CallState.COMPLETED, ):
+    elif call.state in (CallState.COMPLETED,):
         status = "completed"
 
-    return {
-        "call_id": call.id,
-        "status": status
-    }
+    return {"call_id": call.id, "status": status}

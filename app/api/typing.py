@@ -48,6 +48,8 @@ class TwilioGather(BaseModel):
 
 class ActivistInput(BaseModel):
     name: str
+    first_name: str
+    last_name: str
     email: EmailStr
     phone: PhoneNumberStr
 

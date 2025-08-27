@@ -16,6 +16,7 @@ dependencies = [
     "transitions>=0.9.3",
     "twilio>=9.7.0",
     "uvicorn[standard]>=0.35.0",
+    "gql[all]>=4.0.0",
 ]
 
 [dependency-groups]
