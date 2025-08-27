@@ -24,6 +24,13 @@ def get_mock_call(attrs = {}):
     }
     return SimpleNamespace(**values)
 
+def get_payload():
+    return {
+        "activist": { "first_name": "Test", "last_name": "Unit", "name": "Test Unit", "phone": "+5531998899876", "email": "test@unit.devel" },
+        "target": {"name": "Target Name", "phone": "+5531998899875"},
+        "widget_id": 12
+    }
+
 
 def test_call_success(client, mocker, session):
     mock_client = mocker.patch("app.api.routes.call.client")
@@ -32,7 +39,7 @@ def test_call_success(client, mocker, session):
     mock_response = get_mock_call()
     mock_client.calls.create.return_value = mock_response
     
-    resp = client.post("/v1/phone/call", json={"from_phone_number": "+5531998899876", "to_phone_number": "+5531998899875"})
+    resp = client.post("/v1/phone/call", json=get_payload())
     call = session.exec(select(Call)).first()
 
     assert resp.status_code == 200
@@ -47,7 +54,7 @@ def test_call_create_event(client, mocker, session):
     mock_response = get_mock_call()
     mock_client.calls.create.return_value = mock_response
     
-    client.post("/v1/phone/call", json={"from_phone_number": "+5531998899876", "to_phone_number": "+5531998899875"})
+    client.post("/v1/phone/call", json=get_payload())
     call = session.exec(select(Call)).first()
     twilio_call = session.exec(select(TwilioCall)).first()
     twilio_call_event = session.exec(select(TwilioCallEvent)).first()
@@ -64,7 +71,7 @@ def test_call_twilio_instruction_gather(client, mocker, session):
     mock_response = get_mock_call()
     mock_client.calls.create.return_value = mock_response
     
-    client.post("/v1/phone/call", json={"from_phone_number": "+5531998899876", "to_phone_number": "+5531998899875"})
+    client.post("/v1/phone/call", json=get_payload())
     call = session.exec(select(Call)).first()
     
     resp = VoiceResponse()

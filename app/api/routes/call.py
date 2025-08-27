@@ -31,8 +31,8 @@ async def call(payload: CreateCallPayload, session: SessionDep):
     Returns:
         _type_: _description_
     """
-    from_number = payload.from_phone_number if payload.from_phone_number.startswith("+55") else f"+55{payload.from_phone_number}"
-    to_number = payload.to_phone_number if payload.to_phone_number.startswith("+55") else f"+55{payload.to_phone_number}"
+    from_number = payload.activist.phone
+    to_number = payload.target.phone
 
     # Criar ligação lógica
     call = Call(
@@ -60,7 +60,7 @@ async def call(payload: CreateCallPayload, session: SessionDep):
 
     try:
         twilio_call_response = client.calls.create(
-            to=payload.from_phone_number,
+            to=payload.activist.phone,
             from_=settings.twilio_phone_number,
             status_callback=f"{base_url}/status-callback/{call.id}",
             status_callback_method="POST",

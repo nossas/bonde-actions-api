@@ -1,5 +1,6 @@
 from typing import Optional, Literal
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
+from app.validate import PhoneNumberStr
 
 
 TwilioCallStatus = Literal[
@@ -45,6 +46,18 @@ class TwilioGather(BaseModel):
     AnsweredBy: Optional[str] = None
 
 
+class ActivistInput(BaseModel):
+    name: str
+    email: EmailStr
+    phone: PhoneNumberStr
+
+
+class TargetInput(BaseModel):
+    name: str
+    phone: PhoneNumberStr
+
+
 class CreateCallPayload(BaseModel):
-    from_phone_number: str
-    to_phone_number: str
+    widget_id: int
+    activist: ActivistInput
+    target: TargetInput
