@@ -31,9 +31,12 @@ async def call(payload: CreateCallPayload, session: SessionDep):
     Returns:
         _type_: _description_
     """
+    from_number = payload.from_phone_number if payload.from_phone_number.startswith("+55") else f"+55{payload.from_phone_number}"
+    to_number = payload.to_phone_number if payload.to_phone_number.startswith("+55") else f"+55{payload.to_phone_number}"
+
     # Criar ligação lógica
     call = Call(
-        from_number=payload.from_phone_number, to_number=payload.to_phone_number
+        from_number=from_number, to_number=to_number
     )
     session.add(call)
     session.flush()
@@ -431,12 +434,25 @@ async def dial_amd_status_callback(call_id: str, request: Request, session: Sess
     }
 
 
-# @router.get("/status/{call_id}")
-# async def status(call_id: int, session: SessionDep):
-#     call = session.exec(select(Call).where(Call.id == call_id)).first()
+@router.get("/status/{call_id}")
+async def status(call_id: str, session: SessionDep):
+    call = session.exec(select(Call).where(Call.id == call_id)).first()
 
-#     return {
-#         "call_id": call_id,
-#         # TODO: Entender o retorno desse status
-#         "status": call.status,
-#     }
+    status = None
+    if call.state in (CallState.INITIATED, CallState.RINGING, CallState.ANSWERED):
+        status = "initiated"
+    elif call.state in (CallState.FAILED, ):
+        status = "canceled"
+    elif call.state in (CallState.CONNECTED, ):
+        status = "in-progress"
+    elif call.state in (CallState.REDIRECTING, CallState.DESTINATION_INITIATED, CallState.DESTINATION_RINGING, CallState.DESTINATION_ANSWERED):
+        status = "ringing"
+    elif call.state in (CallState.NO_ANSWERED, ):
+        status = "no-answer"
+    elif call.state in (CallState.COMPLETED, ):
+        status = "completed"
+
+    return {
+        "call_id": call.id,
+        "status": status
+    }
