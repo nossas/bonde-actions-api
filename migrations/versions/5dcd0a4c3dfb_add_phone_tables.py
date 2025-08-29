@@ -62,11 +62,6 @@ def upgrade() -> None:
         name="eventtype",
     )
 
-    callstate_enum.create(op.get_bind(), checkfirst=True)
-    twiliocallstatus_enum.create(op.get_bind(), checkfirst=True)
-    twilioansweredby_enum.create(op.get_bind(), checkfirst=True)
-    eventtype_enum.create(op.get_bind(), checkfirst=True)
-
     # phone_calls
     op.create_table(
         "phone_calls",
