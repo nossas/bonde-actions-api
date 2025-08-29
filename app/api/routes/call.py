@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Response, Request
+from fastapi import APIRouter, Response, Request, HTTPException
 from sqlmodel import select
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse, Dial, Gather
@@ -6,7 +6,7 @@ from twilio.twiml.voice_response import VoiceResponse, Dial, Gather
 from app.config import settings
 from app.logger import get_logger
 from app.db import SessionDep
-from app.graphql import GraphQLClientDep, create_widget_action_gql
+from app.graphql import GraphQLClientDep, create_widget_action_gql, get_widget_gql
 from app.models import Call, TwilioCall, TwilioCallEvent
 from app.enum import EventType, TwilioCallStatus, TwilioAnsweredBy, CallState
 from app.machine import CallMachine
@@ -23,7 +23,9 @@ client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
 
 @router.post("/call")
 async def call(
-    payload: CreateCallPayload, session: SessionDep, graphql_client: GraphQLClientDep
+    payload: CreateCallPayload,
+    session: SessionDep,
+    graphql_client: GraphQLClientDep
 ):
     """Inicia uma ligação lógica e dispara instrução Twiml
 
@@ -34,6 +36,50 @@ async def call(
     Returns:
         _type_: _description_
     """
+    # Validações de dados no BONDE
+    result = await graphql_client.execute(
+        get_widget_gql, variable_values=dict(widget_id=payload.widget_id)
+    )
+    widget = result.get("widgets_by_pk")
+
+    logger.debug("/call -> GraphQL result to get_widget")
+    logger.debug(result)
+
+    if not widget:
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                {
+                    "loc": ["body", "widget_id"],
+                    "msg": "Widget not found.",
+                    "type": "value_error",
+                }
+            ],
+        )
+    elif widget and widget.get("kind") != "phone":
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                {
+                    "loc": ["body", "widget_id"],
+                    "msg": "Widget is not a 'phone' kind.",
+                    "type": "value_error",
+                }
+            ],
+        )
+    elif widget and not any(x.get("phone") == payload.target.phone for x in widget.get("settings", {}).get("targets", [])):
+        raise HTTPException(
+            status_code=422,
+            detail=[
+                {
+                    "loc": ["body", "widget_id"],
+                    "msg": "Target is not present in Widget settings.",
+                    "type": "value_error",
+                }
+            ],
+        )
+
+    # Execução da função de ligar
     from_number = payload.activist.phone
     to_number = payload.target.phone
 
@@ -112,12 +158,13 @@ async def call(
         logger.info(twilio_call_event)
 
         # Insere uma ação na API do BONDE
-        await graphql_client.execute_async(
-            create_widget_action_gql, variable_values=dict(
+        await graphql_client.execute(
+            create_widget_action_gql,
+            variable_values=dict(
                 widget_id=payload.widget_id,
                 activist=payload.activist.model_dump(),
-                input=dict(custom_fields=dict(call=call.id))
-            )
+                input=dict(custom_fields=dict(call=call.id)),
+            ),
         )
 
         return {

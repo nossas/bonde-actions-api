@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -13,6 +14,7 @@ class Settings(BaseSettings):
     twilio_phone_number: str
     #
     graphql_api_url: str
+    graphql_api_token: Optional[str] = None
 
     class Config:
         env_file = ".env"
