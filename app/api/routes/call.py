@@ -232,8 +232,10 @@ async def status_callback(call_id: str, request: Request, session: SessionDep):
             machine.attend()
         case TwilioCallStatus.COMPLETED:
             machine.complete()
+        case TwilioCallStatus.FAILED:
+            machine.complete()
         case _:
-            logger.info("@@ Diferente de INITIATED, RINGING, IN_PROGRESS ou COMPLETED")
+            logger.info("@@ Diferente de INITIATED, RINGING, IN_PROGRESS, FAILED ou COMPLETED")
 
     session.add(call)
     session.commit()
