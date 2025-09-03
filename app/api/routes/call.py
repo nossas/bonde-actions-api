@@ -478,7 +478,9 @@ async def dial_amd_status_callback(call_id: str, request: Request, session: Sess
         machine.dial_connect()
     elif answered_by in (
         TwilioAnsweredBy.MACHINE_START,
+        TwilioAnsweredBy.MACHINE_START_BEEP,
         TwilioAnsweredBy.MACHINE_END,
+        TwilioAnsweredBy.MACHINE_END_BEEP,
         TwilioAnsweredBy.FAX,
     ):
         machine.dial_voicemail()

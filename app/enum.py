@@ -52,7 +52,9 @@ class TwilioAnsweredBy(BaseEnum):
     """
     HUMAN = "human"
     MACHINE_START = "machine_start"
+    MACHINE_START_BEEP = "machine_start_beep"
     MACHINE_END = "machine_end"
+    MACHINE_END_BEEP = "machine_end_beep"
     FAX = "fax"
     UNKNOWN = "unknown"
 

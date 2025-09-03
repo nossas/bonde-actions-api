@@ -32,6 +32,7 @@ def upgrade() -> None:
         "destination-answered",
         "connected",
         "failed",
+        "no-answered",
         "completed",
         name="callstate",
     )
@@ -50,7 +51,9 @@ def upgrade() -> None:
     twilioansweredby_enum = sa.Enum(
         "human",
         "machine_start",
+        "machine_start_beep",
         "machine_end",
+        "machine_end_beep",
         "fax",
         "unknown",
         name="twilioansweredby",
