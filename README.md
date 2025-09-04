@@ -1,3 +1,61 @@
+# bonde-actions-api
+API de táticas de Ações usadas no BONDE
+
+# Visão Geral
+Este projeto fornece uma API, desenvolvida com FastAPI, para orquestrar ações telefônicas através do serviço Twilio.
+É parte da infraestrutura do BONDE para disparar chamadas automatizadas, enviar SMS e interagir via telefonia.
+
+## Tecnologias Utilizadas
+- Python 3.x
+- FastAPI – Framework da API
+- Alembic: Migrações de banco de dados
+- uv: Gerenciador de ambientes e dependências Python
+- Docker e docker-compose
+
+## Estrutura do Projeto
+```
+.
+├── src/
+│   └── app/
+│       ├── main.py             # Inicialização da API FastAPI
+│       ├── api/
+│           └── routers/        # Endpoints (ex: chamadas, status)
+│       ├── models.py           # Schemas Pydantic e models ORM
+│       └── db.py               # Configuração e migrações Alembic
+├── migrations/                 # Arquivos de migração
+├── pyproject.toml / uv.lock    # Dependências gerenciadas pelo uv
+├── .python-version
+├── LICENSE
+└── README.md
+```
+
+## Instalação e Execução
+### Resuisitos
+- Docker compose
+- Python 3.x + uv instalado globalmente
+
+### Passo a passo
+```bash
+# Clone o projeto
+git clone https://github.com/nossas/bonde-actions-api.git
+cd bonde-actions-api
+
+# Instalação do uv globalmente (macOS and Linux)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Instalação do uv globalmente (macOS com Homebrew)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Instalação do uv globalmente (Windows)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+# Instalação do uv usando PyPI
+pip install uv
+
+# Instale dependências com uv
+uv sync
+
+# Suba o ambiente com Docker
+docker-compose up --build
+```
+
 ## Pressão por Telefone
 
 Conectar 2 números de telefone, Ativista e Alvo para realizar uma tática de Pressão.
