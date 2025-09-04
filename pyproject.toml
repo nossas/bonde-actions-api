@@ -6,17 +6,29 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "alembic>=1.16.4",
+    "alembic-postgresql-enum>=1.8.0",
     "fastapi>=0.116.1",
     "psycopg2-binary>=2.9.10",
-    "pydantic>=2.11.7",
+    "pydantic[email]>=2.11.7",
     "pydantic-settings>=2.10.1",
     "python-multipart>=0.0.20",
     "sqlmodel>=0.0.24",
+    "transitions>=0.9.3",
     "twilio>=9.7.0",
     "uvicorn[standard]>=0.35.0",
+    "gql[all]>=4.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "fastapi-cli>=0.0.8",
+    "httpx>=0.28.1",
+    "ipdb>=0.13.13",
+    "ipython>=9.4.0",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "pytest-mock>=3.14.1",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
