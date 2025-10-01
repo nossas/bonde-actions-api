@@ -285,7 +285,7 @@ async def amd_status_callback(call_id: str, request: Request, session: SessionDe
     call = twilio_call.parent_call
     machine = CallMachine(call)
 
-    if answered_by == TwilioAnsweredBy.HUMAN:
+    if answered_by in (TwilioAnsweredBy.HUMAN, TwilioAnsweredBy.UNKNOWN):
         machine.connect()
     else:
         machine.fail()
